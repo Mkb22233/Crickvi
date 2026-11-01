@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Live Cricket</title>
+    <!-- MQTT for Real-Time Internet Sync -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body { 
+            margin: 0; padding: 0; background-color: #020617; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh; overflow-x: hidden;
+            background-image: radial-gradient(circle at top, #1e293b, #020617);
+        }
+        
+        /* Mobile App Container */
+        .app-container { 
+            width: 100%; max-width: 450px; background: #0f172a; min-height: 100vh; 
+            display: flex; flex-direction: column; position: relative; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* Connection Screen */
+        .connect-screen { 
+            position: absolute; inset: 0; background: #0f172a; z-index: 50; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; padding: 30px; text-align: center; transition: 0.4s;
+        }
+        .connect-screen.hidden { opacity: 0; pointer-events: none; }
+        .connect-screen h2 { color: white; margin-bottom: 5px; }
+        .connect-screen p { color: #94a3b8; font-size: 14px; margin-bottom: 25px; }
+        .connect-input { 
+            font-size: 28px; padding: 15px; width: 100%; max-width: 250px; text-align: center; letter-spacing: 8px; 
+            font-weight: bold; border-radius: 12px; border: 2px solid #3b82f6; background: #1e293b; color: white; 
+            outline: none; margin-bottom: 20px; text-transform: uppercase;
+        }
+        .btn-connect { 
+            background: #10b981; color: white; font-size: 18px; padding: 15px 40px; border: none; 
+            border-radius: 12px; cursor: pointer; font-weight: bold; width: 100%; max-width: 250px; 
+        }
+
+        /* Scoreboard UI - Hidden initially */
+        .scoreboard { display: none; flex-direction: column; flex: 1; }
+        .scoreboard.active { display: flex; animation: slideUp 0.5s ease; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Top Header */
+        .header { background: #1e293b; padding: 12px 20px; display: flex; justify-content: space-between; border-bottom: 1px solid #334155; font-size: 13px; font-weight: bold; }
+        .match-format { color: #94a3b8; text-transform: uppercase; }
+        .run-rates { color: #cbd5e1; }
+        .run-rates span { color: #fbbf24; margin-left: 5px; }
+
+        /* Main Score Area */
+        .main-score { padding: 30px 20px; text-align: center; background: linear-gradient(180deg, #1e293b, #0f172a); }
+        .teams-mobile { color: #64748b; font-size: 16px; font-weight: bold; margin-bottom: 10px; }
+        .teams-mobile .active-team { color: #fff; font-size: 22px; }
+        .teams-mobile .vs { font-size: 14px; margin: 0 10px; font-style: italic; }
+        
+        .score-huge { font-size: 70px; font-weight: 900; color: white; line-height: 1; text-shadow: 0 4px 15px rgba(0,0,0,0.4); margin: 5px 0; }
+        .overs-display { color: #94a3b8; font-size: 18px; font-weight: 600; margin-top: 5px; }
+        .overs-display span { color: #fff; }
+
+        /* Players Area */
+        .stats-card { background: #1e293b; margin: 15px; border-radius: 12px; border: 1px solid #334155; overflow: hidden; }
+        
+        .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border-bottom: 1px solid #334155; }
+        .stat-row:last-child { border-bottom: none; }
+        
+        .player-name { color: #e2e8f0; font-size: 16px; }
+        .striker { background: rgba(56, 189, 248, 0.05); }
+        .striker .player-name { color: #38bdf8; font-weight: bold; }
+        .striker .player-name::after { content: " *"; color: #fbbf24; }
+        
+        .nums { font-family: monospace; font-size: 18px; font-weight: bold; color: white; display: flex; align-items: baseline; }
+        .nums-sub { font-size: 13px; color: #94a3b8; font-weight: normal; margin-left: 6px; }
+
+        .bowler-row { background: rgba(248, 113, 113, 0.05); }
+        .bowler-name { color: #f87171; font-weight: bold; font-size: 16px; }
+
+        /* This Over */
+        .this-over-box { padding: 15px; background: #0f172a; border-top: 1px solid #334155; }
+        .this-over-title { font-size: 12px; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-bottom: 10px; }
+        .balls-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .ball-circle { width: 32px; height: 32px; border-radius: 50%; background: #334155; color: white; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; }
+        .ball-circle.w { background: #ef4444; } .ball-circle.bound { background: #10b981; }
+
+        /* Ticker Footer */
+        .ticker { margin-top: auto; background: #020617; color: #cbd5e1; padding: 15px; font-size: 14px; text-align: center; border-top: 2px solid #3b82f6; font-weight: 500; }
+
+        /* Match Over Overlay */
+        .result-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 900; color: #fbbf24; z-index: 100; text-align: center; padding: 30px; display: none; flex-direction: column; }
+        .result-overlay.active { display: flex; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+
+    <!-- Screen 1: Connect -->
+    <div class="connect-screen" id="connectScreen">
+        <h2>LIVE MATCH</h2>
+        <p>Enter the 5-digit Match ID to sync</p>
+        <input type="tel" class="connect-input" id="matchIdInput" placeholder="XXXXX" maxlength="5">
+        <button class="btn-connect" onclick="connectToMatch()">WATCH LIVE</button>
+        <div id="statusMsg" style="margin-top: 20px; color: #fbbf24; font-size: 14px; font-weight: bold;"></div>
+    </div>
+
+    <!-- Screen 2: Result Overlay (Hidden until match ends) -->
+    <div class="result-overlay" id="resultOverlay">
+        <div style="font-size: 18px; color: #fff; margin-bottom: 10px;">MATCH FINISHED</div>
+        <div id="resultText">TEAM WON</div>
+    </div>
+
+    <!-- Screen 3: Mobile Scoreboard -->
+    <div class="scoreboard" id="scoreboard">
+        
+        <div class="header">
+            <div class="match-format" id="matchFormatDisplay">Wait...</div>
+            <div class="run-rates" id="rrDisplay">CRR: <span>0.00</span></div>
+        </div>
+
+        <div class="main-score">
+            <div class="teams-mobile">
+                <span class="active-team" id="batTeam">BAT</span> 
+                <span class="vs">vs</span> 
+                <span id="bowlTeam">BOWL</span>
+            </div>
+            <div class="score-huge" id="score">0-0</div>
+            <div class="overs-display">Overs: <span id="overs">0.0</span></div>
+        </div>
+
+        <div class="stats-card">
+            <div class="stat-row striker">
+                <div class="player-name" id="strikerName">Striker</div>
+                <div class="nums"><span id="strikerRuns">0</span> <span class="nums-sub" id="strikerBalls">(0)</span></div>
+            </div>
+            <div class="stat-row">
+                <div class="player-name" id="nonStrikerName">Non-Striker</div>
+                <div class="nums"><span id="nonStrikerRuns">0</span> <span class="nums-sub" id="nonStrikerBalls">(0)</span></div>
+            </div>
+            <div class="stat-row bowler-row">
+                <div class="bowler-name" id="bowlerName">Bowler</div>
+                <div class="nums"><span id="bowlerFig">0-0</span> <span class="nums-sub" id="bowlerOvers">(0.0)</span></div>
+            </div>
+            
+            <div class="this-over-box">
+                <div class="this-over-title">Current Over</div>
+                <div class="balls-row" id="thisOverRender">
+                    <!-- Balls injected here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="ticker" id="targetTicker">Match is live.</div>
+
+    </div>
+
+</div>
+
+<script>
+    let client;
+
+    function connectToMatch() {
+        const matchId = document.getElementById('matchIdInput').value;
+        if(!matchId) return alert("Please enter Match ID");
+        
+        document.getElementById('statusMsg').innerText = "Connecting to Server...";
+        
+        // Connect to public MQTT WebSocket
+        client = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+        
+        client.on('connect', () => {
+            document.getElementById('statusMsg').innerText = "Connected! Loading live score...";
+            client.subscribe(`cricket_global_${matchId}`);
+        });
+
+        client.on('message', (topic, message) => {
+            const data = JSON.parse(message.toString());
+            renderUI(data);
+        });
+    }
+
+    function formatOvers(balls) {
+        return Math.floor(balls/6) + "." + (balls%6);
+    }
+
+    function renderUI(data) {
+        if (!data || data.phase === 'setup') return;
+
+        // Hide connect screen, show scoreboard
+        document.getElementById('connectScreen').classList.add('hidden');
+        document.getElementById('scoreboard').classList.add('active');
+
+        const overs = formatOvers(data.balls);
+        let crr = data.balls === 0 ? "0.00" : ((data.runs / data.balls) * 6).toFixed(2);
+        
+        // Top Main Score
+        document.getElementById('batTeam').innerText = data.teamBat;
+        document.getElementById('bowlTeam').innerText = data.teamBowl;
+        document.getElementById('score').innerText = `${data.runs}-${data.wickets}`;
+        document.getElementById('overs').innerText = overs;
+        
+        // Header info
+        if (data.innings === 1) {
+            document.getElementById('matchFormatDisplay').innerText = `1st INN | ${data.format} OV`;
+            document.getElementById('rrDisplay').innerHTML = `CRR: <span>${crr}</span>`;
+            document.getElementById('targetTicker').innerText = data.commentary[0] || "Match is underway.";
+        } else {
+            let reqRuns = data.target - data.runs;
+            let ballsLeft = (data.format * 6) - data.balls;
+            let rrr = ballsLeft === 0 ? "0.00" : ((reqRuns / ballsLeft) * 6).toFixed(2);
+            document.getElementById('matchFormatDisplay').innerText = `Target: ${data.target}`;
+            document.getElementById('rrDisplay').innerHTML = `CRR: <span>${crr}</span> &nbsp;|&nbsp; RRR: <span>${rrr}</span>`;
+            document.getElementById('targetTicker').innerText = `${data.teamBat} needs ${reqRuns} runs from ${ballsLeft} balls.`;
+        }
+
+        // Batsmen Stats
+        let st = data.batStats[data.striker] || {r:0, b:0};
+        let nst = data.batStats[data.nonStriker] || {r:0, b:0};
+        
+        document.getElementById('strikerName').innerText = data.striker;
+        document.getElementById('strikerRuns').innerText = st.r;
+        document.getElementById('strikerBalls').innerText = `(${st.b})`;
+        
+        document.getElementById('nonStrikerName').innerText = data.nonStriker;
+        document.getElementById('nonStrikerRuns').innerText = nst.r;
+        document.getElementById('nonStrikerBalls').innerText = `(${nst.b})`;
+
+        // Bowler Stats
+        let bw = data.bowlStats[data.bowler] || {wickets:0, runs:0, balls:0};
+        document.getElementById('bowlerName').innerText = data.bowler;
+        document.getElementById('bowlerFig').innerText = `${bw.wickets}-${bw.runs}`;
+        document.getElementById('bowlerOvers').innerText = `(${formatOvers(bw.balls)})`;
+
+        // This Over Visuals
+        document.getElementById('thisOverRender').innerHTML = data.thisOver.map(val => {
+            let cls = val === 'W' ? 'w' : (val == 4 || val == 6) ? 'bound' : '';
+            return `<div class="ball-circle ${cls}">${val}</div>`;
+        }).join('');
+
+        // Results Overlay
+        if (data.phase === 'finished') {
+            document.getElementById('resultOverlay').classList.add('active');
+            document.getElementById('resultText').innerText = data.commentary[0] || "MATCH FINISHED";
+        }
+    }
+</script>
+</body>
+</html>
